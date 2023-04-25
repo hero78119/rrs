@@ -53,7 +53,7 @@ pub enum InstructionException {
     FetchError(u32),
     LoadAccessFault(u32),
     StoreAccessFault(u32),
-    AlignmentFault(u32),
+    AlignmentFault(u64),
 }
 
 /// An `InstructionProcessor` that execute instructions, updating `hart_state` as appropriate.
@@ -119,7 +119,7 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
         let addr = self
             .hart_state
             .read_register(dec_insn.rs1)
-            .wrapping_add(dec_insn.imm as u32);
+            .wrapping_add(dec_insn.imm as u64);
 
         // Determine if address is aligned to size, returning an AlignmentFault as an error if it
         // is not.
@@ -127,6 +127,7 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
             MemAccessSize::Byte => 0x0,
             MemAccessSize::HalfWord => 0x1,
             MemAccessSize::Word => 0x3,
+            MemAccessSize::DoubleWord => 0x7,
         };
 
         if (addr & align_mask) != 0x0 {
@@ -381,6 +382,7 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
     make_load_op_fn! {lh, MemAccessSize::HalfWord, signed}
     make_load_op_fn! {lhu, MemAccessSize::HalfWord, unsigned}
     make_load_op_fn! {lw, MemAccessSize::Word, unsigned}
+    make_load_op_fn! {ld, MemAccessSize::DoubleWord, unsigned}
 
     make_store_op_fn! {sb, MemAccessSize::Byte}
     make_store_op_fn! {sh, MemAccessSize::HalfWord}

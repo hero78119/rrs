@@ -111,6 +111,7 @@ fn process_opcode_load<T: InstructionProcessor>(
         0b000 => Some(processor.process_lb(dec_insn)),
         0b001 => Some(processor.process_lh(dec_insn)),
         0b010 => Some(processor.process_lw(dec_insn)),
+        0b011 => Some(processor.process_ld(dec_insn)),
         0b100 => Some(processor.process_lbu(dec_insn)),
         0b101 => Some(processor.process_lhu(dec_insn)),
         _ => None,

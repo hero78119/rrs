@@ -69,6 +69,7 @@ pub trait InstructionProcessor {
     fn process_lb(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_lbu(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_lh(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
+    fn process_ld(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult; // RV64I
     fn process_lhu(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_lw(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
 
@@ -95,9 +96,9 @@ pub trait InstructionProcessor {
 /// State of a single RISC-V hart (hardware thread)
 pub struct HartState {
     /// x1 - x31 register values. The contents of index 0 (the x0 zero register) are ignored.
-    pub registers: [u32; 32],
+    pub registers: [u64; 32],
     /// Program counter
-    pub pc: u32,
+    pub pc: u64,
     /// Gives index of the last register written if one occurred in the previous instruciton. Set
     /// to `None` if latest instruction did not write a register.
     pub last_register_write: Option<usize>,
@@ -114,7 +115,7 @@ impl HartState {
 
     /// Write a register in the hart state. Used by executing instructions for correct zero
     /// register handling
-    fn write_register(&mut self, reg_index: usize, data: u32) {
+    fn write_register(&mut self, reg_index: usize, data: u64) {
         if reg_index == 0 {
             return;
         }
@@ -125,7 +126,7 @@ impl HartState {
 
     /// Read a register from the hart state. Used by executing instructions for correct zero
     /// register handling
-    fn read_register(&self, reg_index: usize) -> u32 {
+    fn read_register(&self, reg_index: usize) -> u64 {
         if reg_index == 0 {
             0
         } else {
@@ -149,6 +150,8 @@ pub enum MemAccessSize {
     HalfWord,
     /// 32 bits
     Word,
+    /// 64 bits
+    DoubleWord,
 }
 
 /// A trait for objects which implement memory operations
@@ -157,13 +160,13 @@ pub trait Memory: Downcast {
     ///
     /// `addr` must be aligned to `size`.
     /// Returns `None` if `addr` doesn't exist in this memory.
-    fn read_mem(&mut self, addr: u32, size: MemAccessSize) -> Option<u32>;
+    fn read_mem(&mut self, addr: u32, size: MemAccessSize) -> Option<u64>;
 
     /// Write `size` bytes of `store_data` to `addr`
     ///
     /// `addr` must be aligned to `size`.
     /// Returns `true` if write succeeds.
-    fn write_mem(&mut self, addr: u32, size: MemAccessSize, store_data: u32) -> bool;
+    fn write_mem(&mut self, addr: u32, size: MemAccessSize, store_data: u64) -> bool;
 }
 
 impl_downcast!(Memory);
