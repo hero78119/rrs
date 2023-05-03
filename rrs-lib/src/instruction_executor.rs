@@ -40,6 +40,8 @@
 //! assert_eq!(executor.step(), Err(InstructionException::FetchError(0xc)));
 //! ```
 
+use std::convert::TryInto;
+
 use super::instruction_formats;
 use super::process_instruction;
 use super::{HartState, InstructionProcessor, MemAccessSize, Memory};
@@ -49,10 +51,10 @@ use paste::paste;
 #[derive(Debug, PartialEq)]
 pub enum InstructionException {
     // TODO: Better to name the fields?
-    IllegalInstruction(u32, u32),
-    FetchError(u32),
-    LoadAccessFault(u32),
-    StoreAccessFault(u32),
+    IllegalInstruction(u64, u32),
+    FetchError(u64),
+    LoadAccessFault(u64),
+    StoreAccessFault(u64),
     AlignmentFault(u64),
 }
 
@@ -66,7 +68,7 @@ pub struct InstructionExecutor<'a, M: Memory> {
 impl<'a, M: Memory> InstructionExecutor<'a, M> {
     fn execute_reg_reg_op<F>(&mut self, dec_insn: instruction_formats::RType, op: F)
     where
-        F: Fn(u32, u32) -> u32,
+        F: Fn(u64, u64) -> u64,
     {
         let a = self.hart_state.read_register(dec_insn.rs1);
         let b = self.hart_state.read_register(dec_insn.rs2);
@@ -76,17 +78,17 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
 
     fn execute_reg_imm_op<F>(&mut self, dec_insn: instruction_formats::IType, op: F)
     where
-        F: Fn(u32, u32) -> u32,
+        F: Fn(u64, u64) -> u64,
     {
         let a = self.hart_state.read_register(dec_insn.rs1);
-        let b = dec_insn.imm as u32;
+        let b = dec_insn.imm as u64; // TODO figure out this part
         let result = op(a, b);
         self.hart_state.write_register(dec_insn.rd, result);
     }
 
     fn execute_reg_imm_shamt_op<F>(&mut self, dec_insn: instruction_formats::ITypeShamt, op: F)
     where
-        F: Fn(u32, u32) -> u32,
+        F: Fn(u64, u32) -> u64,
     {
         let a = self.hart_state.read_register(dec_insn.rs1);
         let result = op(a, dec_insn.shamt);
@@ -96,13 +98,13 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
     // Returns true if branch succeeds
     fn execute_branch<F>(&mut self, dec_insn: instruction_formats::BType, cond: F) -> bool
     where
-        F: Fn(u32, u32) -> bool,
+        F: Fn(u64, u64) -> bool,
     {
         let a = self.hart_state.read_register(dec_insn.rs1);
         let b = self.hart_state.read_register(dec_insn.rs2);
 
         if cond(a, b) {
-            let new_pc = self.hart_state.pc.wrapping_add(dec_insn.imm as u32);
+            let new_pc = self.hart_state.pc.wrapping_add(dec_insn.imm as u64);
             self.hart_state.pc = new_pc;
             true
         } else {
@@ -145,10 +147,11 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
         // Sign extend loaded data if required
         if signed {
             load_data = (match size {
-                MemAccessSize::Byte => (load_data as i8) as i32,
-                MemAccessSize::HalfWord => (load_data as i16) as i32,
-                MemAccessSize::Word => load_data as i32,
-            }) as u32;
+                MemAccessSize::Byte => (load_data as i8) as i64,
+                MemAccessSize::HalfWord => (load_data as i16) as i64,
+                MemAccessSize::Word => (load_data as i32) as i64,
+                MemAccessSize::DoubleWord => load_data as i64,
+            }) as u64;
         }
 
         // Write load data to destination register
@@ -164,13 +167,14 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
         let addr = self
             .hart_state
             .read_register(dec_insn.rs1)
-            .wrapping_add(dec_insn.imm as u32);
+            .wrapping_add(dec_insn.imm as u64);
         let data = self.hart_state.read_register(dec_insn.rs2);
 
         let align_mask = match size {
             MemAccessSize::Byte => 0x0,
             MemAccessSize::HalfWord => 0x1,
             MemAccessSize::Word => 0x3,
+            MemAccessSize::DoubleWord => 0x7,
         };
 
         // Determine if address is aligned to size, returning an AlignmentFault as an error if it
@@ -195,9 +199,10 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
         self.hart_state.last_register_write = None;
 
         // Fetch next instruction from memory
-        if let Some(next_insn) = self.mem.read_mem(self.hart_state.pc, MemAccessSize::Word) {
+        if let Some(next_insn_u64) = self.mem.read_mem(self.hart_state.pc, MemAccessSize::Word) {
             // Execute the instruction
-            let step_result = process_instruction(self, next_insn);
+            let next_insn: u32 = next_insn_u64.try_into().expect("invalid instruction");
+            let step_result = process_instruction(self, next_insn); // assume instruction only use lower 32 bit
 
             match step_result {
                 Some(Ok(pc_updated)) => {
@@ -222,8 +227,8 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
     }
 }
 
-fn sign_extend_u32(x: u32) -> i64 {
-    (x as i32) as i64
+fn sign_extend_u64(x: u64) -> i128 {
+    (x as i64) as i128
 }
 
 // Macros to implement various repeated operations (e.g. ALU reg op reg instructions).
@@ -346,7 +351,7 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
 
     make_alu_op_fns! {add, |a, b| a.wrapping_add(b)}
     make_alu_op_reg_fn! {sub, |a, b| a.wrapping_sub(b)}
-    make_alu_op_fns! {slt, |a, b| if (a as i32) < (b as i32) {1} else {0}}
+    make_alu_op_fns! {slt, |a, b| if (a as i64) < (b as i64) {1} else {0}}
     make_alu_op_fns! {sltu, |a, b| if a < b {1} else {0}}
     make_alu_op_fns! {or, |a, b| a | b}
     make_alu_op_fns! {and, |a, b| a & b}
@@ -354,17 +359,17 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
 
     make_shift_op_fns! {sll, |a, b| a << (b & 0x1f)}
     make_shift_op_fns! {srl, |a, b| a >> (b & 0x1f)}
-    make_shift_op_fns! {sra, |a, b| ((a as i32) >> (b & 0x1f)) as u32}
+    make_shift_op_fns! {sra, |a, b| ((a as i64) >> (b & 0x1f)) as u64}
 
     fn process_lui(&mut self, dec_insn: instruction_formats::UType) -> Self::InstructionResult {
         self.hart_state
-            .write_register(dec_insn.rd, dec_insn.imm as u32);
+            .write_register(dec_insn.rd, dec_insn.imm as u64);
 
         Ok(false)
     }
 
     fn process_auipc(&mut self, dec_insn: instruction_formats::UType) -> Self::InstructionResult {
-        let result = self.hart_state.pc.wrapping_add(dec_insn.imm as u32);
+        let result = self.hart_state.pc.wrapping_add(dec_insn.imm as u64);
         self.hart_state.write_register(dec_insn.rd, result);
 
         Ok(false)
@@ -372,9 +377,9 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
 
     make_branch_op_fn! {beq, |a, b| a == b}
     make_branch_op_fn! {bne, |a, b| a != b}
-    make_branch_op_fn! {blt, |a, b|  (a as i32) < (b as i32)}
+    make_branch_op_fn! {blt, |a, b|  (a as i64) < (b as i64)}
     make_branch_op_fn! {bltu, |a, b| a < b}
-    make_branch_op_fn! {bge, |a, b|  (a as i32) >= (b as i32)}
+    make_branch_op_fn! {bge, |a, b|  (a as i64) >= (b as i64)}
     make_branch_op_fn! {bgeu, |a, b| a >= b}
 
     make_load_op_fn! {lb, MemAccessSize::Byte, signed}
@@ -389,9 +394,9 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
     make_store_op_fn! {sw, MemAccessSize::Word}
 
     fn process_jal(&mut self, dec_insn: instruction_formats::JType) -> Self::InstructionResult {
-        let target_pc = self.hart_state.pc.wrapping_add(dec_insn.imm as u32);
+        let target_pc = self.hart_state.pc.wrapping_add(dec_insn.imm as u64);
         self.hart_state
-            .write_register(dec_insn.rd, self.hart_state.pc + 4);
+            .write_register(dec_insn.rd, self.hart_state.pc + 8);
         self.hart_state.pc = target_pc;
 
         Ok(true)
@@ -401,24 +406,24 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
         let mut target_pc = self
             .hart_state
             .read_register(dec_insn.rs1)
-            .wrapping_add(dec_insn.imm as u32);
+            .wrapping_add(dec_insn.imm as u64);
         target_pc &= 0xfffffffe;
 
         self.hart_state
-            .write_register(dec_insn.rd, self.hart_state.pc + 4);
+            .write_register(dec_insn.rd, self.hart_state.pc + 8);
         self.hart_state.pc = target_pc;
 
         Ok(true)
     }
 
     make_alu_op_reg_fn! {mul, |a, b| a.wrapping_mul(b)}
-    make_alu_op_reg_fn! {mulh, |a, b| (sign_extend_u32(a).wrapping_mul(sign_extend_u32(b)) >> 32) as u32}
-    make_alu_op_reg_fn! {mulhu, |a, b| (((a as u64).wrapping_mul(b as u64)) >> 32) as u32}
-    make_alu_op_reg_fn! {mulhsu, |a, b| (sign_extend_u32(a).wrapping_mul(b as i64) >> 32) as u32}
+    make_alu_op_reg_fn! {mulh, |a, b| (sign_extend_u64(a).wrapping_mul(sign_extend_u64(b)) >> 64) as u64}
+    make_alu_op_reg_fn! {mulhu, |a, b| (((a as u128).wrapping_mul(b as u128)) >> 64) as u64}
+    make_alu_op_reg_fn! {mulhsu, |a, b| (sign_extend_u64(a).wrapping_mul(b as i128) >> 64) as u64}
 
-    make_alu_op_reg_fn! {div, |a, b| if b == 0 {u32::MAX} else {((a as i32).wrapping_div(b as i32)) as u32}}
-    make_alu_op_reg_fn! {divu, |a, b| if b == 0 {u32::MAX} else {a / b}}
-    make_alu_op_reg_fn! {rem, |a, b| if b == 0 {a} else {((a as i32).wrapping_rem(b as i32)) as u32}}
+    make_alu_op_reg_fn! {div, |a, b| if b == 0 {u64::MAX} else {((a as i64).wrapping_div(b as i64)) as u64}}
+    make_alu_op_reg_fn! {divu, |a, b| if b == 0 {u64::MAX} else {a / b}}
+    make_alu_op_reg_fn! {rem, |a, b| if b == 0 {a} else {((a as i64).wrapping_rem(b as i64)) as u64}}
     make_alu_op_reg_fn! {remu, |a, b| if b == 0 {a} else {a % b}}
 
     fn process_fence(&mut self, _dec_insn: instruction_formats::IType) -> Self::InstructionResult {

@@ -160,19 +160,21 @@ pub trait Memory: Downcast {
     ///
     /// `addr` must be aligned to `size`.
     /// Returns `None` if `addr` doesn't exist in this memory.
-    fn read_mem(&mut self, addr: u32, size: MemAccessSize) -> Option<u64>;
+    fn read_mem(&mut self, addr: u64, size: MemAccessSize) -> Option<u64>;
 
     /// Write `size` bytes of `store_data` to `addr`
     ///
     /// `addr` must be aligned to `size`.
     /// Returns `true` if write succeeds.
-    fn write_mem(&mut self, addr: u32, size: MemAccessSize, store_data: u64) -> bool;
+    fn write_mem(&mut self, addr: u64, size: MemAccessSize, store_data: u64) -> bool;
 }
 
 impl_downcast!(Memory);
 
 #[cfg(test)]
 mod tests {
+    use std::convert::TryInto;
+
     use super::instruction_executor::{InstructionException, InstructionExecutor};
     use super::instruction_string_outputter::InstructionStringOutputter;
     use super::*;
@@ -203,10 +205,12 @@ mod tests {
             let mut outputter = InstructionStringOutputter {
                 insn_pc: executor.hart_state.pc,
             };
-            let insn_bits = executor
+            let insn_bits_u64 = executor
                 .mem
                 .read_mem(executor.hart_state.pc, MemAccessSize::Word)
                 .unwrap();
+
+            let insn_bits = insn_bits_u64.try_into().expect("invalid instruction"); // only use lsb 32 bit address
 
             assert_eq!(executor.step(), Ok(()));
 

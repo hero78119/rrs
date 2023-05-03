@@ -12,12 +12,12 @@ use std::io::Read;
 pub fn read_to_memory(
     reader: impl Read,
     memory: &mut impl Memory,
-    start_addr: u32,
+    start_addr: u64,
 ) -> io::Result<()> {
     let mut write_addr = start_addr;
     for b in reader.bytes() {
         let b = b?;
-        if !memory.write_mem(write_addr, MemAccessSize::Byte, b as u32) {
+        if !memory.write_mem(write_addr, MemAccessSize::Byte, b as u64) {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!("Could not write byte at address 0x{:08x}", write_addr),
@@ -34,30 +34,31 @@ pub fn read_to_memory(
 /// The [Vec] uses `u32` as the base type. Any read or write that falls out of the [Vec]s size will
 /// result in a failed read or write.
 pub struct VecMemory {
-    pub mem: Vec<u32>,
+    pub mem: Vec<u64>,
 }
 
 impl VecMemory {
-    pub fn new(init_mem: Vec<u32>) -> VecMemory {
+    pub fn new(init_mem: Vec<u64>) -> VecMemory {
         VecMemory { mem: init_mem }
     }
 }
 
 impl Memory for VecMemory {
-    fn read_mem(&mut self, addr: u32, size: MemAccessSize) -> Option<u32> {
+    fn read_mem(&mut self, addr: u64, size: MemAccessSize) -> Option<u64> {
         // Calculate a mask and shift to apply to a 32-bit word to get the required data
         let (shift, mask) = match size {
-            MemAccessSize::Byte => (addr & 0x3, 0xff),
-            MemAccessSize::HalfWord => (addr & 0x2, 0xffff),
-            MemAccessSize::Word => (0, 0xffffffff),
+            MemAccessSize::Byte => (addr & 0x7, 0xff),       // 0x111
+            MemAccessSize::HalfWord => (addr & 0x6, 0xffff), // 0x110
+            MemAccessSize::Word => (addr & 0x4, 0xffffffff), // 0x100
+            MemAccessSize::DoubleWord => (0, 0xffffffffffffffff),
         };
 
-        if (addr & 0x3) != shift {
+        if (addr & 0x7) != shift {
             panic!("Memory read must be aligned");
         }
 
         // Calculate vector index required data is contained in
-        let word_addr = addr >> 2;
+        let word_addr = addr >> 3;
 
         // Read data from vector
         let read_data = self.mem.get(word_addr as usize).copied()?;
@@ -66,15 +67,16 @@ impl Memory for VecMemory {
         Some((read_data >> (shift * 8)) & mask)
     }
 
-    fn write_mem(&mut self, addr: u32, size: MemAccessSize, store_data: u32) -> bool {
+    fn write_mem(&mut self, addr: u64, size: MemAccessSize, store_data: u64) -> bool {
         // Calculate a mask and shift needed to update 32-bit word
         let (shift, mask) = match size {
-            MemAccessSize::Byte => (addr & 0x3, 0xff),
-            MemAccessSize::HalfWord => (addr & 0x2, 0xffff),
-            MemAccessSize::Word => (0, 0xffffffff),
+            MemAccessSize::Byte => (addr & 0x7, 0xff),       // 0x111
+            MemAccessSize::HalfWord => (addr & 0x6, 0xffff), // 0x110
+            MemAccessSize::Word => (addr & 0x4, 0xffffffff), // 0x100
+            MemAccessSize::DoubleWord => (0, 0xffffffffffffffff),
         };
 
-        if (addr & 0x3) != shift {
+        if (addr & 0x7) != shift {
             panic!("Memory write must be aligned");
         }
 
@@ -82,7 +84,7 @@ impl Memory for VecMemory {
         let write_mask = !(mask << (shift * 8));
 
         // Calculate vector index data to update is contained in
-        let word_addr = (addr >> 2) as usize;
+        let word_addr = (addr >> 3) as usize;
 
         if let Some(update_data) = self.mem.get(word_addr) {
             // Update word with store data, if it exists
@@ -96,8 +98,8 @@ impl Memory for VecMemory {
 }
 
 struct MemoryRegion {
-    base: u32,
-    size: u32,
+    base: u64,
+    size: u64,
     memory: Box<dyn Memory>,
 }
 
@@ -127,7 +129,7 @@ impl MemorySpace {
     }
 
     // Returns true if region with given base and size overlaps with an existing region.
-    fn region_overlaps_existing(&self, base: u32, size: u32) -> bool {
+    fn region_overlaps_existing(&self, base: u64, size: u64) -> bool {
         for memory_region in self.memory_regions.iter() {
             if base + size <= memory_region.base {
                 continue;
@@ -144,7 +146,7 @@ impl MemorySpace {
     }
 
     // Gets the memory region that covers an address if it exists.
-    fn get_memory_region_by_addr(&mut self, addr: u32) -> Option<&mut MemoryRegion> {
+    fn get_memory_region_by_addr(&mut self, addr: u64) -> Option<&mut MemoryRegion> {
         for memory_region in self.memory_regions.iter_mut() {
             if (addr >= memory_region.base) && (addr < (memory_region.base + memory_region.size)) {
                 return Some(memory_region);
@@ -161,11 +163,11 @@ impl MemorySpace {
     /// memory.
     pub fn add_memory(
         &mut self,
-        base: u32,
-        size: u32,
+        base: u64,
+        size: u64,
         memory: Box<dyn Memory>,
     ) -> Result<usize, MemorySpaceError> {
-        if ((base & 0x3) != 0) || ((size & 0x3) != 0) {
+        if ((base & 0x7) != 0) || ((size & 0x7) != 0) {
             return Err(MemorySpaceError::Unaligned);
         }
 
@@ -205,7 +207,7 @@ impl Default for MemorySpace {
 }
 
 impl Memory for MemorySpace {
-    fn read_mem(&mut self, addr: u32, size: MemAccessSize) -> Option<u32> {
+    fn read_mem(&mut self, addr: u64, size: MemAccessSize) -> Option<u64> {
         let memory_region = self.get_memory_region_by_addr(addr)?;
 
         memory_region
@@ -213,7 +215,7 @@ impl Memory for MemorySpace {
             .read_mem(addr - memory_region.base, size)
     }
 
-    fn write_mem(&mut self, addr: u32, size: MemAccessSize, store_data: u32) -> bool {
+    fn write_mem(&mut self, addr: u64, size: MemAccessSize, store_data: u64) -> bool {
         if let Some(memory_region) = self.get_memory_region_by_addr(addr) {
             memory_region
                 .memory
@@ -229,23 +231,23 @@ mod tests {
     use super::*;
     #[test]
     fn test_vec_memory() {
-        let mut test_mem = VecMemory::new(vec![0xdeadbeef, 0xbaadf00d]);
+        let mut test_mem = VecMemory::new(vec![0xdeadbeefdeadbeef, 0xbaadf00dbaadf00d]);
 
         assert_eq!(test_mem.read_mem(0x0, MemAccessSize::Byte), Some(0xef));
 
-        assert_eq!(test_mem.read_mem(0x5, MemAccessSize::Byte), Some(0xf0));
+        assert_eq!(test_mem.read_mem(0x9, MemAccessSize::Byte), Some(0xf0));
 
         assert_eq!(
-            test_mem.read_mem(0x6, MemAccessSize::HalfWord),
+            test_mem.read_mem(0xe, MemAccessSize::HalfWord),
             Some(0xbaad)
         );
 
         assert_eq!(
-            test_mem.read_mem(0x4, MemAccessSize::Word),
+            test_mem.read_mem(0x8, MemAccessSize::Word),
             Some(0xbaadf00d)
         );
 
-        assert_eq!(test_mem.write_mem(0x7, MemAccessSize::Byte, 0xff), true);
+        assert_eq!(test_mem.write_mem(0xb, MemAccessSize::Byte, 0xff), true);
 
         assert_eq!(
             test_mem.write_mem(0x2, MemAccessSize::HalfWord, 0xaaaaface),
@@ -263,66 +265,66 @@ mod tests {
         );
 
         assert_eq!(
-            test_mem.read_mem(0x4, MemAccessSize::Word),
+            test_mem.read_mem(0x8, MemAccessSize::Word),
             Some(0xffadf00d)
         );
 
-        assert_eq!(test_mem.read_mem(0x8, MemAccessSize::Word), None);
+        assert_eq!(test_mem.read_mem(0x10, MemAccessSize::Word), None);
 
-        assert_eq!(test_mem.write_mem(0x8, MemAccessSize::Word, 0x0), false);
+        assert_eq!(test_mem.write_mem(0x10, MemAccessSize::Word, 0x0), false);
     }
 
     struct TestMemory;
 
     impl Memory for TestMemory {
-        fn read_mem(&mut self, _addr: u32, _size: MemAccessSize) -> Option<u32> {
+        fn read_mem(&mut self, _addr: u64, _size: MemAccessSize) -> Option<u64> {
             Some(0x1234abcd)
         }
 
-        fn write_mem(&mut self, _addr: u32, _size: MemAccessSize, _store_data: u32) -> bool {
+        fn write_mem(&mut self, _addr: u64, _size: MemAccessSize, _store_data: u64) -> bool {
             true
         }
     }
 
     #[test]
     fn test_memory_space() {
-        let mem_1_vec = vec![0x11111111, 0x22222222];
-        let mem_2_vec = vec![0x33333333, 0x44444444, 0x55555555];
+        let mem_1_vec = vec![0x1111111111111111, 0x2222222222222222];
+        let mem_2_vec = vec![0x3333333333333333, 0x4444444444444444, 0x5555555555555555];
 
         let mut test_mem_space = MemorySpace::new();
 
         assert_eq!(
-            test_mem_space.add_memory(0x100, 8, Box::new(VecMemory::new(mem_1_vec))),
+            test_mem_space.add_memory(0x1000, 16, Box::new(VecMemory::new(mem_1_vec))),
             Ok(0)
         );
 
         assert_eq!(
-            test_mem_space.add_memory(0x200, 12, Box::new(VecMemory::new(mem_2_vec))),
+            test_mem_space.add_memory(0x2000, 24, Box::new(VecMemory::new(mem_2_vec))),
             Ok(1)
         );
 
         assert_eq!(
-            test_mem_space.add_memory(0x300, 0x100, Box::new(TestMemory {})),
+            test_mem_space.add_memory(0x3000, 0x200, Box::new(TestMemory {})),
             Ok(2)
         );
 
         assert_eq!(
-            test_mem_space.add_memory(0x280, 0x100, Box::new(TestMemory {})),
+            test_mem_space.add_memory(0x2800, 0x1000, Box::new(TestMemory {})),
             Err(MemorySpaceError::RegionOverlap)
         );
 
         assert_eq!(
-            test_mem_space.add_memory(0x280, 0x80, Box::new(TestMemory {})),
+            test_mem_space.add_memory(0x2800, 0x800, Box::new(TestMemory {})),
             Ok(3)
         );
 
         assert_eq!(
-            test_mem_space.add_memory(0x403, 0x100, Box::new(TestMemory {})),
+            test_mem_space.add_memory(0x4003, 0x100, Box::new(TestMemory {})),
             Err(MemorySpaceError::Unaligned)
         );
 
         assert_eq!(
-            test_mem_space.add_memory(0x400, 0x103, Box::new(TestMemory {})),
+            test_mem_space.add_memory(0x4000, 0x103, Box::new(TestMemory {})),
             Err(MemorySpaceError::Unaligned)
         );
 
@@ -332,45 +334,45 @@ mod tests {
         assert!(test_mem_space.get_memory_mut::<TestMemory>(1).is_none());
 
         assert_eq!(
-            test_mem_space.read_mem(0x100, MemAccessSize::Word),
+            test_mem_space.read_mem(0x1000, MemAccessSize::Word),
             Some(0x11111111)
         );
 
         assert_eq!(
-            test_mem_space.read_mem(0x204, MemAccessSize::Word),
+            test_mem_space.read_mem(0x2008, MemAccessSize::Word),
             Some(0x44444444)
         );
 
         assert_eq!(
-            test_mem_space.write_mem(0x208, MemAccessSize::Word, 0xffffffff),
+            test_mem_space.write_mem(0x2010, MemAccessSize::Word, 0xffffffff),
             true
         );
 
         assert_eq!(
-            test_mem_space.write_mem(0x20c, MemAccessSize::Word, 0xffffffff),
+            test_mem_space.write_mem(0x201c, MemAccessSize::Word, 0xffffffff),
             false
         );
 
-        assert_eq!(test_mem_space.read_mem(0x108, MemAccessSize::Word), None);
+        assert_eq!(test_mem_space.read_mem(0x1010, MemAccessSize::Word), None);
 
         for i in 0..0x40 {
             assert_eq!(
-                test_mem_space.read_mem(i * 4 + 0x300, MemAccessSize::Word),
+                test_mem_space.read_mem(0x3000 + i * 8, MemAccessSize::Word),
                 Some(0x1234abcd)
             );
         }
 
-        assert_eq!(test_mem_space.read_mem(0x400, MemAccessSize::Word), None);
+        assert_eq!(test_mem_space.read_mem(0x4000, MemAccessSize::Word), None);
 
         assert_eq!(
             test_mem_space.get_memory_ref::<VecMemory>(1).unwrap().mem[2],
-            0xffffffff
+            0x55555555ffffffff
         );
 
         test_mem_space.get_memory_mut::<VecMemory>(0).unwrap().mem[0] = 0xdeadbeef;
 
         assert_eq!(
-            test_mem_space.read_mem(0x100, MemAccessSize::Word),
+            test_mem_space.read_mem(0x1000, MemAccessSize::Word),
             Some(0xdeadbeef)
         );
     }
@@ -378,7 +380,7 @@ mod tests {
     #[test]
     fn test_read_to_memory() {
         let test_bytes: Vec<u8> = (5..21).collect();
-        let mut test_memory = VecMemory::new(vec![0; 4]);
+        let mut test_memory = VecMemory::new(vec![0; 2]);
 
         assert!(read_to_memory(test_bytes.as_slice(), &mut test_memory, 0).is_ok());
 

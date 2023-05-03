@@ -25,7 +25,7 @@ use paste::paste;
 pub struct InstructionStringOutputter {
     /// PC of the instruction being output. Used to generate disassembly of instructions with PC
     /// relative fields (such as BEQ and JAL).
-    pub insn_pc: u32,
+    pub insn_pc: u64,
 }
 
 // Macros to produce string outputs for various different instruction types
@@ -105,7 +105,7 @@ macro_rules! string_out_for_branch_ops {
                     &mut self,
                     dec_insn: instruction_formats::BType
                 ) -> Self::InstructionResult {
-                    let branch_pc = self.insn_pc.wrapping_add(dec_insn.imm as u32);
+                    let branch_pc = self.insn_pc.wrapping_add(dec_insn.imm as u64);
 
                     format!("{} x{}, x{}, 0x{:08x}", stringify!($name), dec_insn.rs1, dec_insn.rs2,
                         branch_pc)
@@ -172,16 +172,16 @@ impl InstructionProcessor for InstructionStringOutputter {
     }
 
     fn process_auipc(&mut self, dec_insn: instruction_formats::UType) -> Self::InstructionResult {
-        let final_imm = self.insn_pc.wrapping_add(dec_insn.imm as u32);
+        let final_imm = self.insn_pc.wrapping_add(dec_insn.imm as u64);
         format!("auipc x{}, 0x{:08x}", dec_insn.rd, final_imm)
     }
 
     string_out_for_branch_ops! {beq, bne, bge, bgeu, blt, bltu}
-    string_out_for_load_ops! {lb, lbu, lh, lhu, lw}
+    string_out_for_load_ops! {lb, lbu, lh, lhu, lw, ld}
     string_out_for_store_ops! {sb, sh, sw}
 
     fn process_jal(&mut self, dec_insn: instruction_formats::JType) -> Self::InstructionResult {
-        let target_pc = self.insn_pc.wrapping_add(dec_insn.imm as u32);
+        let target_pc = self.insn_pc.wrapping_add(dec_insn.imm as u64);
         format!("jal x{}, 0x{:08x}", dec_insn.rd, target_pc)
     }
 
