@@ -395,8 +395,10 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
 
     fn process_jal(&mut self, dec_insn: instruction_formats::JType) -> Self::InstructionResult {
         let target_pc = self.hart_state.pc.wrapping_add(dec_insn.imm as u64);
+        println!("processed jal target_pc {:?}", target_pc);
+
         self.hart_state
-            .write_register(dec_insn.rd, self.hart_state.pc + 8);
+            .write_register(dec_insn.rd, self.hart_state.pc + 4);
         self.hart_state.pc = target_pc;
 
         Ok(true)
@@ -410,7 +412,7 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
         target_pc &= 0xfffffffe;
 
         self.hart_state
-            .write_register(dec_insn.rd, self.hart_state.pc + 8);
+            .write_register(dec_insn.rd, self.hart_state.pc + 4);
         self.hart_state.pc = target_pc;
 
         Ok(true)

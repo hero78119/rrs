@@ -43,7 +43,7 @@ impl RType {
 
 #[derive(Debug, PartialEq)]
 pub struct IType {
-    pub imm: i32,
+    pub imm: i64,
     pub rs1: usize,
     pub funct3: u32,
     pub rd: usize,
@@ -58,6 +58,8 @@ impl IType {
         } else {
             uimm
         };
+
+        let imm = imm as i64;
 
         IType {
             imm,
@@ -94,7 +96,7 @@ impl ITypeShamt {
 
 #[derive(Debug, PartialEq)]
 pub struct SType {
-    pub imm: i32,
+    pub imm: i64,
     pub rs2: usize,
     pub rs1: usize,
     pub funct3: u32,
@@ -110,6 +112,8 @@ impl SType {
             uimm
         };
 
+        let imm = imm as i64;
+
         SType {
             imm,
             rs2: ((insn >> 20) & 0x1f) as usize,
@@ -121,7 +125,7 @@ impl SType {
 
 #[derive(Debug, PartialEq)]
 pub struct BType {
-    pub imm: i32,
+    pub imm: i64,
     pub rs2: usize,
     pub rs1: usize,
     pub funct3: u32,
@@ -138,6 +142,8 @@ impl BType {
             uimm
         };
 
+        let imm = imm as i64; // final shift 1 due to instruction place in 64 bit lower half
+
         BType {
             imm,
             rs2: ((insn >> 20) & 0x1f) as usize,
@@ -149,14 +155,14 @@ impl BType {
 
 #[derive(Debug, PartialEq)]
 pub struct UType {
-    pub imm: i32,
+    pub imm: i64,
     pub rd: usize,
 }
 
 impl UType {
     pub fn new(insn: u32) -> UType {
         UType {
-            imm: (insn & 0xffff_f000) as i32,
+            imm: ((insn & 0xffff_f000) as i32) as i64,
             rd: ((insn >> 7) & 0x1f) as usize,
         }
     }
@@ -164,7 +170,7 @@ impl UType {
 
 #[derive(Debug, PartialEq)]
 pub struct JType {
-    pub imm: i32,
+    pub imm: i64,
     pub rd: usize,
 }
 
@@ -178,6 +184,8 @@ impl JType {
         } else {
             uimm
         };
+
+        let imm = imm as i64;
 
         JType {
             imm,
@@ -435,7 +443,7 @@ mod tests {
         assert_eq!(
             UType::new(0xfffff037),
             UType {
-                imm: (0xfffff000 as u32) as i32,
+                imm: (0xfffff000 as u32) as i32 as i64,
                 rd: 0,
             }
         );
