@@ -199,9 +199,11 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
         self.hart_state.last_register_write = None;
 
         // Fetch next instruction from memory
-        if let Some(next_insn_u64) = self.mem.read_mem(self.hart_state.pc, MemAccessSize::Word) {
+        if let Some(next_insn) = self.mem.read_mem(self.hart_state.pc, MemAccessSize::Word) {
             // Execute the instruction
-            let next_insn: u32 = next_insn_u64.try_into().expect("invalid instruction");
+            let next_insn: u32 = (next_insn & 0xffffffff)
+                .try_into()
+                .expect("invalid instruction");
             let step_result = process_instruction(self, next_insn); // assume instruction only use lower 32 bit
 
             match step_result {
@@ -409,7 +411,7 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
             .hart_state
             .read_register(dec_insn.rs1)
             .wrapping_add(dec_insn.imm as u64);
-        target_pc &= 0xfffffffe;
+        target_pc &= 0xfffffffffffffffe;
 
         self.hart_state
             .write_register(dec_insn.rd, self.hart_state.pc + 4);

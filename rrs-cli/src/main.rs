@@ -8,6 +8,7 @@ use rrs_lib::instruction_string_outputter::InstructionStringOutputter;
 use rrs_lib::memories;
 use rrs_lib::memories::{MemorySpace, VecMemory};
 use rrs_lib::{HartState, MemAccessSize, Memory};
+use std::convert::TryInto;
 use std::fs::File;
 use std::io;
 use std::io::{BufReader, BufWriter, Write};
@@ -16,10 +17,10 @@ use std::time::Instant;
 #[derive(Default)]
 struct CliOpts {
     binary_file: String,
-    mem_size: u32,
-    mem_base: u32,
-    load_addr: u32,
-    start_addr: u32,
+    mem_size: u64,
+    mem_base: u64,
+    load_addr: u64,
+    start_addr: u64,
     log_filename: Option<String>,
     char_out_filename: Option<String>,
 }
@@ -40,28 +41,28 @@ fn get_arg_matches() -> ArgMatches<'static> {
     .get_matches()
 }
 
-fn process_u32_arg<'a>(
+fn process_u64_arg<'a>(
     args: &ArgMatches<'a>,
     name: &str,
-    base: u32,
-    default: u32,
-) -> Result<u32, String> {
+    base: u64,
+    default: u64,
+) -> Result<u64, String> {
     let arg_str = match args.value_of(name) {
         Some(s) => s,
         None => return Ok(default),
     };
 
-    u32::from_str_radix(arg_str, base).map_err(|e| format!("{} is malformed: {}", name, e))
+    u64::from_str_radix(arg_str, base as u32).map_err(|e| format!("{} is malformed: {}", name, e))
 }
 
 fn process_arguments(args: &ArgMatches) -> Result<CliOpts, String> {
     let mut new_opts = CliOpts::default();
 
     new_opts.binary_file = args.value_of("binary_file").unwrap().to_string();
-    new_opts.mem_size = process_u32_arg(args, "mem_size", 16, 0x100000)?;
-    new_opts.mem_base = process_u32_arg(args, "mem_base", 16, 0x100000)?;
-    new_opts.load_addr = process_u32_arg(args, "load_addr", 16, 0x100000)?;
-    new_opts.start_addr = process_u32_arg(args, "start_addr", 16, new_opts.load_addr)?;
+    new_opts.mem_size = process_u64_arg(args, "mem_size", 16, 0x100000)?;
+    new_opts.mem_base = process_u64_arg(args, "mem_base", 16, 0x100000)?;
+    new_opts.load_addr = process_u64_arg(args, "load_addr", 16, 0x100000)?;
+    new_opts.start_addr = process_u64_arg(args, "start_addr", 16, new_opts.load_addr)?;
     new_opts.log_filename = args.value_of("log_filename").map(|s| s.to_string());
     new_opts.char_out_filename = args.value_of("char_out_filename").map(|s| s.to_string());
 
@@ -95,11 +96,11 @@ impl CharOutputterDevice {
 }
 
 impl Memory for CharOutputterDevice {
-    fn read_mem(&mut self, _addr: u32, _size: MemAccessSize) -> Option<u32> {
+    fn read_mem(&mut self, _addr: u64, _size: MemAccessSize) -> Option<u64> {
         Some(0x0)
     }
 
-    fn write_mem(&mut self, _addr: u32, _size: MemAccessSize, store_data: u32) -> bool {
+    fn write_mem(&mut self, _addr: u64, _size: MemAccessSize, store_data: u64) -> bool {
         let c: char = store_data as u8 as char;
         write!(self.char_out, "{}", c).expect("Failure writing character out");
         true
@@ -118,11 +119,11 @@ impl SimulationCtrlDevice {
 }
 
 impl Memory for SimulationCtrlDevice {
-    fn read_mem(&mut self, _addr: u32, _size: MemAccessSize) -> Option<u32> {
+    fn read_mem(&mut self, _addr: u64, _size: MemAccessSize) -> Option<u64> {
         Some(0x0)
     }
 
-    fn write_mem(&mut self, _addr: u32, _size: MemAccessSize, store_data: u32) -> bool {
+    fn write_mem(&mut self, _addr: u64, _size: MemAccessSize, store_data: u64) -> bool {
         if store_data != 0 {
             self.stop = true;
         } else {
@@ -224,6 +225,7 @@ fn run_sim(sim_environment: &mut SimEnvironment) {
                 insn_pc: executor.hart_state.pc,
             };
 
+            let insn_bits = (insn_bits & 0xffffffff).try_into().unwrap();
             writeln!(
                 log_file,
                 "{:x} {}",

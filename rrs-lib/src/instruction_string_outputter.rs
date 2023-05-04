@@ -315,7 +315,7 @@ mod tests {
 
         assert_eq!(
             process_instruction(&mut outputter, test_insns[19]),
-            Some(String::from("lui x12, 0xdeadb000"))
+            Some(String::from("lui x12, 0xffffffffdeadb000"))
         );
 
         outputter.insn_pc = 0x50;

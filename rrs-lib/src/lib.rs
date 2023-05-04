@@ -183,10 +183,19 @@ mod tests {
     fn test_insn_execute() {
         let mut hart = HartState::new();
         let mut mem = memories::VecMemory::new(vec![
-            0x1234b137, 0xbcd10113, 0xf387e1b7, 0x3aa18193, 0xbed892b7, 0x7ac28293, 0x003100b3,
-            0xf4e0e213, 0x02120a63, 0x00121463, 0x1542c093, 0x00c0036f, 0x0020f0b3, 0x402080b3,
-            0x00000397, 0x02838393, 0x0003a403, 0x00638483, 0x0023d503, 0x00139223, 0x0043a583,
-            0x00000000, 0x00000000, 0x00000000, 0xdeadbeef, 0xbaadf00d,
+            0xbcd10113_1234b137,
+            0x3aa18193_f387e1b7,
+            0x7ac28293_bed892b7,
+            0xf4e0e213_003100b3,
+            0x00121463_02120a63,
+            0x00c0036f_1542c093,
+            0x402080b3_0020f0b3,
+            0x02838393_00000397,
+            0x00638483_0003a403,
+            0x00139223_0023d503,
+            0x00000000_0043a583,
+            0x00000000_00000000,
+            0xbaadf00d_deadbeef,
         ]);
 
         hart.pc = 0;
@@ -205,12 +214,14 @@ mod tests {
             let mut outputter = InstructionStringOutputter {
                 insn_pc: executor.hart_state.pc,
             };
-            let insn_bits_u64 = executor
+            let insn_bits = executor
                 .mem
                 .read_mem(executor.hart_state.pc, MemAccessSize::Word)
                 .unwrap();
 
-            let insn_bits = insn_bits_u64.try_into().expect("invalid instruction"); // only use lsb 32 bit address
+            let insn_bits = (insn_bits & 0xffffffff)
+                .try_into()
+                .expect("invalid instruction"); // only use lsb 32 bit address
 
             assert_eq!(executor.step(), Ok(()));
 
@@ -229,13 +240,13 @@ mod tests {
 
         assert_eq!(executor.hart_state.registers[1], 0x05bc8f77);
         assert_eq!(executor.hart_state.registers[2], 0x1234abcd);
-        assert_eq!(executor.hart_state.registers[3], 0xf387e3aa);
-        assert_eq!(executor.hart_state.registers[4], 0xffffff7f);
-        assert_eq!(executor.hart_state.registers[5], 0xbed897ac);
+        assert_eq!(executor.hart_state.registers[3], 0xfffffffff387e3aa);
+        assert_eq!(executor.hart_state.registers[4], 0xffffffffffffff7f);
+        assert_eq!(executor.hart_state.registers[5], 0xffffffffbed897ac);
         assert_eq!(executor.hart_state.registers[6], 0x00000030);
         assert_eq!(executor.hart_state.registers[7], 0x00000060);
         assert_eq!(executor.hart_state.registers[8], 0xdeadbeef);
-        assert_eq!(executor.hart_state.registers[9], 0xffffffad);
+        assert_eq!(executor.hart_state.registers[9], 0xffffffffffffffad);
         assert_eq!(executor.hart_state.registers[10], 0x0000dead);
         assert_eq!(executor.hart_state.registers[11], 0xbaad8f77);
 
