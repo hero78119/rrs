@@ -123,11 +123,13 @@ fn process_opcode_store<T: InstructionProcessor>(
     insn_bits: u32,
 ) -> Option<T::InstructionResult> {
     let dec_insn = instruction_formats::SType::new(insn_bits);
+    println!(" process_opcode_store with dec_insn {:?}", dec_insn);
 
     match dec_insn.funct3 {
         0b000 => Some(processor.process_sb(dec_insn)),
         0b001 => Some(processor.process_sh(dec_insn)),
         0b010 => Some(processor.process_sw(dec_insn)),
+        0b011 => Some(processor.process_sd(dec_insn)),
         _ => None,
     }
 }

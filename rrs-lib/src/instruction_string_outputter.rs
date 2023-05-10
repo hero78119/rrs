@@ -178,7 +178,7 @@ impl InstructionProcessor for InstructionStringOutputter {
 
     string_out_for_branch_ops! {beq, bne, bge, bgeu, blt, bltu}
     string_out_for_load_ops! {lb, lbu, lh, lhu, lw, ld}
-    string_out_for_store_ops! {sb, sh, sw}
+    string_out_for_store_ops! {sb, sh, sw, sd}
 
     fn process_jal(&mut self, dec_insn: instruction_formats::JType) -> Self::InstructionResult {
         let target_pc = self.insn_pc.wrapping_add(dec_insn.imm as u64);

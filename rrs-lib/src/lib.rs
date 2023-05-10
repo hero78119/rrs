@@ -76,6 +76,7 @@ pub trait InstructionProcessor {
     fn process_sb(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult;
     fn process_sh(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult;
     fn process_sw(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult;
+    fn process_sd(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult;
 
     fn process_jal(&mut self, dec_insn: instruction_formats::JType) -> Self::InstructionResult;
     fn process_jalr(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;

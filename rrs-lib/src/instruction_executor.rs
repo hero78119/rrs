@@ -168,6 +168,10 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
             .hart_state
             .read_register(dec_insn.rs1)
             .wrapping_add(dec_insn.imm as u64);
+        println!(
+            "rss: rs1 raw address before adding imm: {:16x}",
+            self.hart_state.read_register(dec_insn.rs1)
+        );
         let data = self.hart_state.read_register(dec_insn.rs2);
 
         let align_mask = match size {
@@ -394,6 +398,7 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
     make_store_op_fn! {sb, MemAccessSize::Byte}
     make_store_op_fn! {sh, MemAccessSize::HalfWord}
     make_store_op_fn! {sw, MemAccessSize::Word}
+    make_store_op_fn! {sd, MemAccessSize::DoubleWord}
 
     fn process_jal(&mut self, dec_insn: instruction_formats::JType) -> Self::InstructionResult {
         let target_pc = self.hart_state.pc.wrapping_add(dec_insn.imm as u64);
