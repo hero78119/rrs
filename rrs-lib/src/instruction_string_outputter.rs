@@ -70,7 +70,7 @@ macro_rules! string_out_for_alu_imm_shamt_op {
         paste! {
             fn [<process_ $name i>](
                 &mut self,
-                dec_insn: instruction_formats::ITypeShamt
+                dec_insn: instruction_formats::ITypeRV64Shamt
             ) -> Self::InstructionResult {
                 format!("{}i x{}, x{}, {}", stringify!($name), dec_insn.rd, dec_insn.rs1,
                     dec_insn.shamt)
@@ -167,6 +167,13 @@ impl InstructionProcessor for InstructionStringOutputter {
         )
     }
 
+    fn process_addiw(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult {
+        format!(
+            "addiw x{}, x{}, {}",
+            dec_insn.rd, dec_insn.rs1, dec_insn.imm
+        )
+    }
+
     fn process_lui(&mut self, dec_insn: instruction_formats::UType) -> Self::InstructionResult {
         format!("lui x{}, 0x{:08x}", dec_insn.rd, dec_insn.imm)
     }
@@ -177,7 +184,7 @@ impl InstructionProcessor for InstructionStringOutputter {
     }
 
     string_out_for_branch_ops! {beq, bne, bge, bgeu, blt, bltu}
-    string_out_for_load_ops! {lb, lbu, lh, lhu, lw, ld}
+    string_out_for_load_ops! {lb, lbu, lh, lhu, lw, ld, lwu}
     string_out_for_store_ops! {sb, sh, sw, sd}
 
     fn process_jal(&mut self, dec_insn: instruction_formats::JType) -> Self::InstructionResult {

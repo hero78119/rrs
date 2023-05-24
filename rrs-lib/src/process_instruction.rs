@@ -66,15 +66,15 @@ fn process_opcode_op_imm<T: InstructionProcessor>(
 
     match dec_insn.funct3 {
         0b000 => Some(processor.process_addi(dec_insn)),
-        0b001 => Some(processor.process_slli(instruction_formats::ITypeShamt::new(insn_bits))),
+        0b001 => Some(processor.process_slli(instruction_formats::ITypeRV64Shamt::new(insn_bits))),
         0b010 => Some(processor.process_slti(dec_insn)),
         0b011 => Some(processor.process_sltui(dec_insn)),
         0b100 => Some(processor.process_xori(dec_insn)),
         0b101 => {
-            let dec_insn_shamt = instruction_formats::ITypeShamt::new(insn_bits);
+            let dec_insn_shamt = instruction_formats::ITypeRV64Shamt::new(insn_bits);
             match dec_insn_shamt.funct7 {
-                0b000_0000 => Some(processor.process_srli(dec_insn_shamt)),
-                0b010_0000 => Some(processor.process_srai(dec_insn_shamt)),
+                0b000_000 => Some(processor.process_srli(dec_insn_shamt)),
+                0b010_000 => Some(processor.process_srai(dec_insn_shamt)),
                 _ => None,
             }
         }
@@ -114,6 +114,7 @@ fn process_opcode_load<T: InstructionProcessor>(
         0b011 => Some(processor.process_ld(dec_insn)),
         0b100 => Some(processor.process_lbu(dec_insn)),
         0b101 => Some(processor.process_lhu(dec_insn)),
+        0b110 => Some(processor.process_lwu(dec_insn)),
         _ => None,
     }
 }
@@ -152,6 +153,13 @@ pub fn process_instruction<T: InstructionProcessor>(
         }
         instruction_formats::OPCODE_AUIPC => {
             Some(processor.process_auipc(instruction_formats::UType::new(insn_bits)))
+        }
+        instruction_formats::OPCODE_IW => {
+            let dec_insn = instruction_formats::IType::new(insn_bits);
+            match dec_insn.funct3 {
+                0b000 => Some(processor.process_addiw(dec_insn)),
+                _ => None,
+            }
         }
         instruction_formats::OPCODE_BRANCH => process_opcode_branch(processor, insn_bits),
         instruction_formats::OPCODE_LOAD => process_opcode_load(processor, insn_bits),

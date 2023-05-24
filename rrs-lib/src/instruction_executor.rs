@@ -86,7 +86,7 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
         self.hart_state.write_register(dec_insn.rd, result);
     }
 
-    fn execute_reg_imm_shamt_op<F>(&mut self, dec_insn: instruction_formats::ITypeShamt, op: F)
+    fn execute_reg_imm_shamt_op<F>(&mut self, dec_insn: instruction_formats::ITypeRV64Shamt, op: F)
     where
         F: Fn(u64, u32) -> u64,
     {
@@ -122,7 +122,14 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
             .hart_state
             .read_register(dec_insn.rs1)
             .wrapping_add(dec_insn.imm as u64);
-
+        println!(
+            "load rss: rs1 index {:8x} raw address before adding imm: {:16x}, imm dec: {:?}, imm hex: {:08x}, after adding imm {:16x}",
+            dec_insn.rs1,
+            self.hart_state.read_register(dec_insn.rs1),
+            dec_insn.imm as i64,
+            dec_insn.imm as i64,
+            addr,
+        );
         // Determine if address is aligned to size, returning an AlignmentFault as an error if it
         // is not.
         let align_mask = match size {
@@ -169,8 +176,12 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
             .read_register(dec_insn.rs1)
             .wrapping_add(dec_insn.imm as u64);
         println!(
-            "rss: rs1 raw address before adding imm: {:16x}",
-            self.hart_state.read_register(dec_insn.rs1)
+            "store rss: rs1 index {:8x} raw address before adding imm: {:16x}, imm dec: {:?}, imm hex: {:08x}, after adding imm {:16x}",
+            dec_insn.rs1,
+            self.hart_state.read_register(dec_insn.rs1),
+            dec_insn.imm as i64,
+            dec_insn.imm as i64,
+            addr,
         );
         let data = self.hart_state.read_register(dec_insn.rs2);
 
@@ -237,6 +248,10 @@ fn sign_extend_u64(x: u64) -> i128 {
     (x as i64) as i128
 }
 
+fn sign_extend_u32(x: u32) -> i64 {
+    (x as i32) as i64
+}
+
 // Macros to implement various repeated operations (e.g. ALU reg op reg instructions).
 macro_rules! make_alu_op_reg_fn {
     ($name:ident, $op_fn:expr) => {
@@ -273,7 +288,7 @@ macro_rules! make_alu_op_imm_shamt_fn {
         paste! {
             fn [<process_ $name i>](
                 &mut self,
-                dec_insn: instruction_formats::ITypeShamt
+                dec_insn: instruction_formats::ITypeRV64Shamt
             ) -> Self::InstructionResult {
                 self.execute_reg_imm_shamt_op(dec_insn, $op_fn);
 
@@ -363,9 +378,31 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
     make_alu_op_fns! {and, |a, b| a & b}
     make_alu_op_fns! {xor, |a, b| a ^ b}
 
-    make_shift_op_fns! {sll, |a, b| a << (b & 0x1f)}
-    make_shift_op_fns! {srl, |a, b| a >> (b & 0x1f)}
-    make_shift_op_fns! {sra, |a, b| ((a as i64) >> (b & 0x1f)) as u64}
+    make_shift_op_fns! {sll, |a, b| a << (b & 0x3f)} // RV64: 0x1f -> 0x3f, shamt take 6 bits
+    make_shift_op_fns! {srl, |a, b| a >> (b & 0x3f)} // RV64: 0x1f -> 0x3f, shamt take 6 bits
+    make_shift_op_fns! {sra, |a, b| ((a as i64) >> (b & 0x3f)) as u64} // RV64: 0x1f -> 0x3f, shamt take 6 bits
+
+    /*
+    ADDIW is an RV64I-only instruction that adds the sign-extended 12-bit immediate to register rs1
+    and produces the proper sign-extension of a 32-bit result in rd. Overflows are ignored and the
+    result is the low 32 bits of the result sign-extended to 64 bits. Note, ADDIW rd, rs1, 0 writes the
+    sign-extension of the lower 32 bits of register rs1 into register rd (assembler pseudo-op SEXT.W).
+     */
+    fn process_addiw(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult {
+        let a = self.hart_state.read_register(dec_insn.rs1);
+        let b = dec_insn.imm as u64; // TODO figure out this part
+        let result = a.wrapping_add(b);
+        println!(
+            "process_addiw a {:16x}, b {:16x}, result {:16x}",
+            a, b, result
+        );
+        self.hart_state.write_register(
+            dec_insn.rd,
+            sign_extend_u32((result & 0xffffffff) as u32) as u64,
+        );
+
+        Ok(false)
+    }
 
     fn process_lui(&mut self, dec_insn: instruction_formats::UType) -> Self::InstructionResult {
         self.hart_state
@@ -392,7 +429,8 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
     make_load_op_fn! {lbu, MemAccessSize::Byte, unsigned}
     make_load_op_fn! {lh, MemAccessSize::HalfWord, signed}
     make_load_op_fn! {lhu, MemAccessSize::HalfWord, unsigned}
-    make_load_op_fn! {lw, MemAccessSize::Word, unsigned}
+    make_load_op_fn! {lw, MemAccessSize::Word, signed}
+    make_load_op_fn! {lwu, MemAccessSize::Word, unsigned}
     make_load_op_fn! {ld, MemAccessSize::DoubleWord, unsigned}
 
     make_store_op_fn! {sb, MemAccessSize::Byte}

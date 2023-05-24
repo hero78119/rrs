@@ -10,10 +10,11 @@
 
 pub const OPCODE_LOAD: u32 = 0x03;
 pub const OPCODE_MISC_MEM: u32 = 0x0f;
-pub const OPCODE_OP_IMM: u32 = 0x13;
+pub const OPCODE_OP_IMM: u32 = 0b0010011; // 13
 pub const OPCODE_AUIPC: u32 = 0x17;
+pub const OPCODE_IW: u32 = 0b0011011;
 pub const OPCODE_STORE: u32 = 0x23;
-pub const OPCODE_OP: u32 = 0x33;
+pub const OPCODE_OP: u32 = 0b0110011; // 33
 pub const OPCODE_LUI: u32 = 0x37;
 pub const OPCODE_BRANCH: u32 = 0x63;
 pub const OPCODE_JALR: u32 = 0x67;
@@ -70,8 +71,9 @@ impl IType {
     }
 }
 
+// RV64, bits[25] is for shamt[5]
 #[derive(Debug, PartialEq)]
-pub struct ITypeShamt {
+pub struct ITypeRV64Shamt {
     pub funct7: u32,
     pub shamt: u32,
     pub rs1: usize,
@@ -79,13 +81,13 @@ pub struct ITypeShamt {
     pub rd: usize,
 }
 
-impl ITypeShamt {
-    pub fn new(insn: u32) -> ITypeShamt {
+impl ITypeRV64Shamt {
+    pub fn new(insn: u32) -> ITypeRV64Shamt {
         let itype = IType::new(insn);
-        let shamt = (itype.imm as u32) & 0x1f;
+        let shamt = (itype.imm as u32) & 0x3f;
 
-        ITypeShamt {
-            funct7: (insn >> 25) & 0x7f,
+        ITypeRV64Shamt {
+            funct7: (insn >> 26) & 0x3f,
             shamt,
             rs1: itype.rs1,
             funct3: itype.funct3,
@@ -261,11 +263,11 @@ mod tests {
     }
 
     #[test]
-    fn test_itype_shamt() {
+    fn test_itype_rv64_shamt() {
         // slli x12, x5, 13
         assert_eq!(
-            ITypeShamt::new(0x00d29613),
-            ITypeShamt {
+            ITypeRV64Shamt::new(0x00d29613),
+            ITypeRV64Shamt {
                 funct7: 0,
                 shamt: 13,
                 rs1: 5,
@@ -276,10 +278,10 @@ mod tests {
 
         // srli x30, x19, 31
         assert_eq!(
-            ITypeShamt::new(0x01f9df13),
-            ITypeShamt {
+            ITypeRV64Shamt::new(0x249df13),
+            ITypeRV64Shamt {
                 funct7: 0,
-                shamt: 31,
+                shamt: 36,
                 rs1: 19,
                 funct3: 0b101,
                 rd: 30
@@ -288,9 +290,9 @@ mod tests {
 
         // srai x7, x23, 0
         assert_eq!(
-            ITypeShamt::new(0x400bd393),
-            ITypeShamt {
-                funct7: 0b0100000,
+            ITypeRV64Shamt::new(0x400bd393),
+            ITypeRV64Shamt {
+                funct7: 0b010000,
                 shamt: 0,
                 rs1: 23,
                 funct3: 0b101,

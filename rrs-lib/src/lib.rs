@@ -38,20 +38,21 @@ pub trait InstructionProcessor {
     fn process_and(&mut self, dec_insn: instruction_formats::RType) -> Self::InstructionResult;
 
     fn process_addi(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
+    fn process_addiw(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_slli(
         &mut self,
-        dec_insn: instruction_formats::ITypeShamt,
+        dec_insn: instruction_formats::ITypeRV64Shamt,
     ) -> Self::InstructionResult;
     fn process_slti(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_sltui(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_xori(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_srli(
         &mut self,
-        dec_insn: instruction_formats::ITypeShamt,
+        dec_insn: instruction_formats::ITypeRV64Shamt,
     ) -> Self::InstructionResult;
     fn process_srai(
         &mut self,
-        dec_insn: instruction_formats::ITypeShamt,
+        dec_insn: instruction_formats::ITypeRV64Shamt,
     ) -> Self::InstructionResult;
     fn process_ori(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_andi(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
@@ -72,11 +73,12 @@ pub trait InstructionProcessor {
     fn process_ld(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult; // RV64I
     fn process_lhu(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
     fn process_lw(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
+    fn process_lwu(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult; // RV64I
 
     fn process_sb(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult;
     fn process_sh(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult;
     fn process_sw(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult;
-    fn process_sd(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult;
+    fn process_sd(&mut self, dec_insn: instruction_formats::SType) -> Self::InstructionResult; // RV64I
 
     fn process_jal(&mut self, dec_insn: instruction_formats::JType) -> Self::InstructionResult;
     fn process_jalr(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult;
