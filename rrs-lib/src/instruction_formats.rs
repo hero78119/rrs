@@ -15,6 +15,9 @@ pub const OPCODE_AUIPC: u32 = 0x17;
 pub const OPCODE_IW: u32 = 0b0011011;
 pub const OPCODE_STORE: u32 = 0x23;
 pub const OPCODE_OP: u32 = 0b0110011; // 33
+pub const OPCODE_FENCE: u32 = 0b0001111;
+pub const OPCODE_OPW: u32 = 0b0111011;
+pub const OPCODE_AMO: u32 = 0b0101111;
 pub const OPCODE_LUI: u32 = 0x37;
 pub const OPCODE_BRANCH: u32 = 0x63;
 pub const OPCODE_JALR: u32 = 0x67;
@@ -196,6 +199,52 @@ impl JType {
     }
 }
 
+// Atomic
+#[derive(Debug, PartialEq)]
+pub struct AType {
+    pub funct5: u32,
+    pub aq: u32,
+    pub rl: u32,
+    pub rs2: usize,
+    pub rs1: usize,
+    pub funct3: u32,
+    pub rd: usize,
+}
+
+impl AType {
+    pub fn new(insn: u32) -> AType {
+        AType {
+            funct5: (insn >> 27) & 0x1f,
+            aq: (insn >> 26) & 0x1,
+            rl: (insn >> 25) & 0x1,
+            rs2: ((insn >> 20) & 0x1f) as usize,
+            rs1: ((insn >> 15) & 0x1f) as usize,
+            funct3: (insn >> 12) & 0x7,
+            rd: ((insn >> 7) & 0x1f) as usize,
+        }
+    }
+}
+
+// Atomic
+#[derive(Debug, PartialEq)]
+pub struct CType {
+    pub csr: u32,
+    pub rs1: usize,
+    pub funct3: u32,
+    pub rd: usize,
+}
+
+impl CType {
+    pub fn new(insn: u32) -> CType {
+        CType {
+            csr: (insn >> 20) & 0xfff,
+            rs1: ((insn >> 15) & 0x1f) as usize,
+            funct3: (insn >> 12) & 0x7,
+            rd: ((insn >> 7) & 0x1f) as usize,
+        }
+    }
+}
+
 #[cfg(test)]
 
 mod tests {
@@ -211,6 +260,35 @@ mod tests {
                 rs1: 0,
                 funct3: 0,
                 rd: 0
+            }
+        )
+    }
+
+    #[test]
+    fn test_atype() {
+        assert_eq!(
+            AType::new(0x0c55232f),
+            AType {
+                funct5: 1,
+                aq: 1,
+                rl: 0,
+                rs2: 5,
+                rs1: 10,
+                funct3: 2,
+                rd: 6
+            }
+        )
+    }
+
+    #[test]
+    fn test_ctype() {
+        assert_eq!(
+            CType::new(0xc0102573),
+            CType {
+                csr: 3073,
+                rs1: 0,
+                funct3: 0,
+                rd: 10,
             }
         )
     }

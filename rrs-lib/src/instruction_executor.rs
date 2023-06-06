@@ -66,6 +66,57 @@ pub struct InstructionExecutor<'a, M: Memory> {
 }
 
 impl<'a, M: Memory> InstructionExecutor<'a, M> {
+    fn execute_amow<F>(
+        &mut self,
+        dec_insn: instruction_formats::AType,
+        op: F,
+    ) -> Result<(), InstructionException>
+    where
+        F: Fn(u64, u64) -> u64,
+    {
+        let rs1_addr = self.hart_state.read_register(dec_insn.rs1);
+        let rs1_value_signed_ext = match self.mem.read_mem(rs1_addr, MemAccessSize::Word) {
+            Some(rs1_value) => rs1_value as i32 as i64 as u64,
+            None => {
+                return Err(InstructionException::LoadAccessFault(rs1_addr));
+            }
+        };
+        let rs2_value = self.hart_state.read_register(dec_insn.rs2);
+        let rs2_32_extended = rs2_value as i32 as i64 as u64;
+        let r1_final = op(rs1_value_signed_ext, rs2_32_extended);
+
+        self.hart_state
+            .write_register(dec_insn.rd, rs1_value_signed_ext);
+        self.mem.write_mem(rs1_addr, MemAccessSize::Word, r1_final);
+
+        Ok(())
+    }
+
+    fn execute_amod<F>(
+        &mut self,
+        dec_insn: instruction_formats::AType,
+        op: F,
+    ) -> Result<(), InstructionException>
+    where
+        F: Fn(u64, u64) -> u64,
+    {
+        let rs1_addr = self.hart_state.read_register(dec_insn.rs1);
+        let rs1_value = match self.mem.read_mem(rs1_addr, MemAccessSize::DoubleWord) {
+            Some(rs1_value) => rs1_value,
+            None => {
+                return Err(InstructionException::LoadAccessFault(rs1_addr));
+            }
+        };
+        let rs2_value = self.hart_state.read_register(dec_insn.rs2);
+        let rs1_final = op(rs1_value, rs2_value);
+
+        self.hart_state.write_register(dec_insn.rd, rs1_value);
+        self.mem
+            .write_mem(rs1_addr, MemAccessSize::DoubleWord, rs1_final);
+
+        Ok(())
+    }
+
     fn execute_reg_reg_op<F>(&mut self, dec_insn: instruction_formats::RType, op: F)
     where
         F: Fn(u64, u64) -> u64,
@@ -109,6 +160,77 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
             true
         } else {
             false
+        }
+    }
+
+    // XXX assume single core, and assume lock works
+    fn execute_amo_load(
+        &mut self,
+        dec_insn: instruction_formats::AType,
+        size: MemAccessSize,
+    ) -> Result<(), InstructionException> {
+        let addr = self.hart_state.read_register(dec_insn.rs1);
+        // Determine if address is aligned to size, returning an AlignmentFault as an error if it
+        // is not.
+        let align_mask = match size {
+            MemAccessSize::Byte => 0x0,
+            MemAccessSize::HalfWord => 0x1,
+            MemAccessSize::Word => 0x3,
+            MemAccessSize::DoubleWord => 0x7,
+        };
+
+        if (addr & align_mask) != 0x0 {
+            return Err(InstructionException::AlignmentFault(addr));
+        }
+
+        // Attempt to read data from memory, returning a LoadAccessFault as an error if it is not.
+        let mut load_data = match self.mem.read_mem(addr, size) {
+            Some(d) => d,
+            None => {
+                return Err(InstructionException::LoadAccessFault(addr));
+            }
+        };
+
+        load_data = (match size {
+            MemAccessSize::Byte => (load_data as i8) as i64,
+            MemAccessSize::HalfWord => (load_data as i16) as i64,
+            MemAccessSize::Word => (load_data as i32) as i64,
+            MemAccessSize::DoubleWord => load_data as i64,
+        }) as u64;
+
+        // Write load data to destination register
+        self.hart_state.write_register(dec_insn.rd, load_data);
+        Ok(())
+    }
+
+    fn execute_amo_store(
+        &mut self,
+        dec_insn: instruction_formats::AType,
+        size: MemAccessSize,
+    ) -> Result<(), InstructionException> {
+        let addr = self.hart_state.read_register(dec_insn.rs1);
+
+        let data = self.hart_state.read_register(dec_insn.rs2);
+
+        let align_mask = match size {
+            MemAccessSize::Byte => 0x0,
+            MemAccessSize::HalfWord => 0x1,
+            MemAccessSize::Word => 0x3,
+            MemAccessSize::DoubleWord => 0x7,
+        };
+
+        // Determine if address is aligned to size, returning an AlignmentFault as an error if it
+        // is not.
+        if (addr & align_mask) != 0x0 {
+            return Err(InstructionException::AlignmentFault(addr));
+        }
+
+        // Write store data to memory, returning a StoreAccessFault as an error if write fails.
+        if self.mem.write_mem(addr, size, data) {
+            self.hart_state.write_register(dec_insn.rd, 0u64);
+            Ok(())
+        } else {
+            Err(InstructionException::StoreAccessFault(addr))
         }
     }
 
@@ -198,6 +320,9 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
             return Err(InstructionException::AlignmentFault(addr));
         }
 
+        if addr == 0xe0130 {
+            println!("wow write here!!!")
+        }
         // Write store data to memory, returning a StoreAccessFault as an error if write fails.
         if self.mem.write_mem(addr, size, data) {
             Ok(())
@@ -340,6 +465,35 @@ macro_rules! make_load_op_fn_inner {
     };
 }
 
+macro_rules! make_amo_store_op_fn {
+    ($name:ident, $size:ty) => {
+        paste! {
+            fn [<process_ $name>](
+                &mut self,
+                dec_insn: instruction_formats::AType
+            ) -> Self::InstructionResult {
+                self.execute_amo_store(dec_insn, $size)?;
+
+                Ok(false)
+            }
+        }
+    };
+}
+macro_rules! make_amo_load_op_fn {
+    ($name:ident, $size:ty) => {
+        paste! {
+            fn [<process_ $name>](
+                &mut self,
+                dec_insn: instruction_formats::AType
+            ) -> Self::InstructionResult {
+                self.execute_amo_load(dec_insn, $size)?;
+
+                Ok(false)
+            }
+        }
+    };
+}
+
 macro_rules! make_load_op_fn {
     ($name:ident, $size:ty, signed) => {
         make_load_op_fn_inner! {$name, $size, true}
@@ -357,6 +511,36 @@ macro_rules! make_store_op_fn {
                 dec_insn: instruction_formats::SType
             ) -> Self::InstructionResult {
                 self.execute_store(dec_insn, $size)?;
+
+                Ok(false)
+            }
+        }
+    };
+}
+
+macro_rules! make_amow_op_reg_fn {
+    ($name:ident, $op_fn:expr) => {
+        paste! {
+            fn [<process_ $name >](
+                &mut self,
+                dec_insn: instruction_formats::AType
+            ) -> Self::InstructionResult {
+                self.execute_amow(dec_insn, $op_fn)?;
+
+                Ok(false)
+            }
+        }
+    };
+}
+
+macro_rules! make_amod_op_reg_fn {
+    ($name:ident, $op_fn:expr) => {
+        paste! {
+            fn [<process_ $name >](
+                &mut self,
+                dec_insn: instruction_formats::AType
+            ) -> Self::InstructionResult {
+                self.execute_amod(dec_insn, $op_fn)?;
 
                 Ok(false)
             }
@@ -382,6 +566,10 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
     make_shift_op_fns! {srl, |a, b| a >> (b & 0x3f)} // RV64: 0x1f -> 0x3f, shamt take 6 bits
     make_shift_op_fns! {sra, |a, b| ((a as i64) >> (b & 0x3f)) as u64} // RV64: 0x1f -> 0x3f, shamt take 6 bits
 
+    fn process_rdtime(&mut self, dec_insn: instruction_formats::CType) -> Self::InstructionResult {
+        self.hart_state.write_register(dec_insn.rd, 0u64);
+        Ok(false)
+    }
     /*
     ADDIW is an RV64I-only instruction that adds the sign-extended 12-bit immediate to register rs1
     and produces the proper sign-extension of a 32-bit result in rd. Overflows are ignored and the
@@ -403,6 +591,34 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
 
         Ok(false)
     }
+
+    make_amow_op_reg_fn! {amoswapw, |_, b| b}
+    make_amow_op_reg_fn! {amoorw, |a, b| a | b}
+    make_amow_op_reg_fn! {amoandw, |a, b| a & b}
+    make_amow_op_reg_fn! {amoaddw, |a, b| a.wrapping_add(b)}
+    make_amod_op_reg_fn! {amoaddd, |a, b| a.wrapping_add(b)}
+    make_amod_op_reg_fn! {amoswapd, |_, b| b}
+    // fn process_amoswapw(
+    //     &mut self,
+    //     dec_insn: instruction_formats::AType,
+    // ) -> Self::InstructionResult {
+    //     let rs1_addr = self.hart_state.read_register(dec_insn.rs1);
+    //     let rs1_value_signed_ext = match self.mem.read_mem(rs1_addr, MemAccessSize::Word) {
+    //         Some(rs1_value) => rs1_value as i32 as i64 as u64,
+    //         None => {
+    //             return Err(InstructionException::LoadAccessFault(rs1_addr));
+    //         }
+    //     };
+    //     let rs2_value = self.hart_state.read_register(dec_insn.rs2);
+    //     let rs2_32_extended = rs2_value as i32 as i64 as u64;
+
+    //     self.hart_state
+    //         .write_register(dec_insn.rd, rs1_value_signed_ext);
+    //     self.mem
+    //         .write_mem(rs1_addr, MemAccessSize::Word, rs2_32_extended);
+
+    //     Ok(false)
+    // }
 
     fn process_lui(&mut self, dec_insn: instruction_formats::UType) -> Self::InstructionResult {
         self.hart_state
@@ -432,6 +648,11 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
     make_load_op_fn! {lw, MemAccessSize::Word, signed}
     make_load_op_fn! {lwu, MemAccessSize::Word, unsigned}
     make_load_op_fn! {ld, MemAccessSize::DoubleWord, unsigned}
+
+    make_amo_load_op_fn! {amolrd, MemAccessSize::DoubleWord}
+    make_amo_store_op_fn! {amoscd, MemAccessSize::DoubleWord}
+    make_amo_load_op_fn! {amolrw, MemAccessSize::Word}
+    make_amo_store_op_fn! {amoscw, MemAccessSize::Word}
 
     make_store_op_fn! {sb, MemAccessSize::Byte}
     make_store_op_fn! {sh, MemAccessSize::HalfWord}
@@ -466,11 +687,13 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
     make_alu_op_reg_fn! {mulh, |a, b| (sign_extend_u64(a).wrapping_mul(sign_extend_u64(b)) >> 64) as u64}
     make_alu_op_reg_fn! {mulhu, |a, b| (((a as u128).wrapping_mul(b as u128)) >> 64) as u64}
     make_alu_op_reg_fn! {mulhsu, |a, b| (sign_extend_u64(a).wrapping_mul(b as i128) >> 64) as u64}
+    make_alu_op_reg_fn! {mulw, |a, b| ((a & 0xffffffff) as u32).wrapping_mul((b & 0xffffffff) as u32) as i32 as i64 as u64}
 
     make_alu_op_reg_fn! {div, |a, b| if b == 0 {u64::MAX} else {((a as i64).wrapping_div(b as i64)) as u64}}
     make_alu_op_reg_fn! {divu, |a, b| if b == 0 {u64::MAX} else {a / b}}
     make_alu_op_reg_fn! {rem, |a, b| if b == 0 {a} else {((a as i64).wrapping_rem(b as i64)) as u64}}
     make_alu_op_reg_fn! {remu, |a, b| if b == 0 {a} else {a % b}}
+    make_alu_op_reg_fn! {remuw, |a, b| if b == 0 {(a & 0xffffffff) as u32 as u64} else {((a & 0xffffffff) as u32 % (b & 0xffffffff) as u32) as i32 as i64 as u64}}
 
     fn process_fence(&mut self, _dec_insn: instruction_formats::IType) -> Self::InstructionResult {
         Ok(false)

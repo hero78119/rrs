@@ -97,9 +97,9 @@ impl Memory for VecMemory {
     }
 }
 
-struct MemoryRegion {
-    base: u64,
-    size: u64,
+pub struct MemoryRegion {
+    pub base: u64,
+    pub size: u64,
     memory: Box<dyn Memory>,
 }
 
@@ -119,6 +119,7 @@ pub struct MemorySpace {
 pub enum MemorySpaceError {
     RegionOverlap,
     Unaligned,
+    UnallocateRegion(String),
 }
 
 impl MemorySpace {
@@ -146,7 +147,7 @@ impl MemorySpace {
     }
 
     // Gets the memory region that covers an address if it exists.
-    fn get_memory_region_by_addr(&mut self, addr: u64) -> Option<&mut MemoryRegion> {
+    pub fn get_memory_region_by_addr(&mut self, addr: u64) -> Option<&mut MemoryRegion> {
         for memory_region in self.memory_regions.iter_mut() {
             if (addr >= memory_region.base) && (addr < (memory_region.base + memory_region.size)) {
                 return Some(memory_region);
@@ -180,6 +181,22 @@ impl MemorySpace {
             .push(MemoryRegion { base, size, memory });
 
         Ok(new_mem_index)
+    }
+
+    /// remove_memory_by_base
+    pub fn remove_memory_by_base(&mut self, base: u64) -> Result<(), MemorySpaceError> {
+        match self.memory_regions.iter().position(|x| x.base == base) {
+            Some(index) => {
+                self.memory_regions.remove(index);
+                Ok(())
+            }
+            None => {
+                return Err(MemorySpaceError::UnallocateRegion(format!(
+                    "invalid base: {:16x}",
+                    base
+                )))
+            }
+        }
     }
 
     /// Get a reference to an inner memory
@@ -375,6 +392,13 @@ mod tests {
             test_mem_space.read_mem(0x1000, MemAccessSize::Word),
             Some(0xdeadbeef)
         );
+
+        assert_eq!(
+            test_mem_space.read_mem(0x3000, MemAccessSize::Word),
+            Some(0x1234abcd)
+        );
+        test_mem_space.remove_memory_by_base(0x3000).unwrap();
+        assert_eq!(test_mem_space.read_mem(0x30008, MemAccessSize::Word), None);
     }
 
     #[test]

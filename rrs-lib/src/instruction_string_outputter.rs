@@ -147,6 +147,24 @@ macro_rules! string_out_for_store_ops {
     }
 }
 
+macro_rules! string_out_for_amo {
+    ($($name:ident),*) => {
+        $(
+            paste! {
+                fn [<process_ $name>](
+                    &mut self,
+                    dec_insn: instruction_formats::AType
+                ) -> Self::InstructionResult {
+                        format!(
+                            "{} x{}, x{}, x{}",
+                            stringify!($name), dec_insn.rd, dec_insn.rs1, dec_insn.rs2
+                        )
+                }
+            }
+        )*
+    }
+}
+
 impl InstructionProcessor for InstructionStringOutputter {
     type InstructionResult = String;
 
@@ -164,6 +182,15 @@ impl InstructionProcessor for InstructionStringOutputter {
         format!(
             "sltiu x{}, x{}, {}",
             dec_insn.rd, dec_insn.rs1, dec_insn.imm
+        )
+    }
+
+    string_out_for_amo! {amoswapw, amoswapd, amoaddd, amolrd, amoscd, amolrw, amoscw, amoorw, amoandw, amoaddw}
+
+    fn process_rdtime(&mut self, dec_insn: instruction_formats::CType) -> Self::InstructionResult {
+        format!(
+            "rdtime x{}, x{}, {}",
+            dec_insn.rd, dec_insn.rs1, dec_insn.csr
         )
     }
 
@@ -199,7 +226,7 @@ impl InstructionProcessor for InstructionStringOutputter {
         )
     }
 
-    string_out_for_alu_reg_ops! {mul, mulh, mulhu, mulhsu, div, divu, rem, remu}
+    string_out_for_alu_reg_ops! {mul, mulh, mulhu, mulhsu, mulw, div, divu, rem, remu, remuw}
 
     fn process_fence(&mut self, _dec_insn: instruction_formats::IType) -> Self::InstructionResult {
         String::from("fence")
