@@ -244,14 +244,6 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
             .hart_state
             .read_register(dec_insn.rs1)
             .wrapping_add(dec_insn.imm as u64);
-        println!(
-            "load rss: rs1 index {:8x} raw address before adding imm: {:16x}, imm dec: {:?}, imm hex: {:08x}, after adding imm {:16x}",
-            dec_insn.rs1,
-            self.hart_state.read_register(dec_insn.rs1),
-            dec_insn.imm as i64,
-            dec_insn.imm as i64,
-            addr,
-        );
         // Determine if address is aligned to size, returning an AlignmentFault as an error if it
         // is not.
         let align_mask = match size {
@@ -297,14 +289,7 @@ impl<'a, M: Memory> InstructionExecutor<'a, M> {
             .hart_state
             .read_register(dec_insn.rs1)
             .wrapping_add(dec_insn.imm as u64);
-        println!(
-            "store rss: rs1 index {:8x} raw address before adding imm: {:16x}, imm dec: {:?}, imm hex: {:08x}, after adding imm {:16x}",
-            dec_insn.rs1,
-            self.hart_state.read_register(dec_insn.rs1),
-            dec_insn.imm as i64,
-            dec_insn.imm as i64,
-            addr,
-        );
+
         let data = self.hart_state.read_register(dec_insn.rs2);
 
         let align_mask = match size {
@@ -578,12 +563,8 @@ impl<'a, M: Memory> InstructionProcessor for InstructionExecutor<'a, M> {
      */
     fn process_addiw(&mut self, dec_insn: instruction_formats::IType) -> Self::InstructionResult {
         let a = self.hart_state.read_register(dec_insn.rs1);
-        let b = dec_insn.imm as u64; // TODO figure out this part
+        let b = dec_insn.imm as u64;
         let result = a.wrapping_add(b);
-        println!(
-            "process_addiw a {:16x}, b {:16x}, result {:16x}",
-            a, b, result
-        );
         self.hart_state.write_register(
             dec_insn.rd,
             sign_extend_u32((result & 0xffffffff) as u32) as u64,
