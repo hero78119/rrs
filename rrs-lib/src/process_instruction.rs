@@ -239,7 +239,6 @@ pub fn process_instruction<T: InstructionProcessor>(
     match opcode {
         instruction_formats::OPCODE_OP => process_opcode_op(processor, insn_bits),
         instruction_formats::OPCODE_OPW => process_opcode_opw(processor, insn_bits),
-        instruction_formats::OPCODE_FENCE => process_opcode_fence(processor, insn_bits),
         instruction_formats::OPCODE_SYSTEM => process_opcode_system(processor, insn_bits),
         instruction_formats::OPCODE_AMO => process_opcode_amo(processor, insn_bits),
         instruction_formats::OPCODE_OP_IMM => process_opcode_op_imm(processor, insn_bits),
